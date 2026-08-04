@@ -10,7 +10,7 @@
         "Icon": "memory",
         "Id": "local.widget.ram-monitor",
         "Name": "RAM Monitor",
-        "Version": "1.0"
+        "Version": "1.2"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0"

@@ -9,6 +9,8 @@ import org.kde.kirigami as Kirigami
 PlasmoidItem {
     id: root
 
+    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
+
     // Let Plasma pick: full bars directly on the desktop, small compact
     // icon-style bars when placed in a panel (click to pop up full detail).
 
@@ -18,6 +20,7 @@ PlasmoidItem {
     property real swapTotalKb: 0
     property real swapFreeKb: 0
     property real swapUsedKb: 0
+    property real zramUsedKb: 0
     property real gpuTotalKb: 0
     property real gpuUsedKb: 0
 
@@ -31,6 +34,16 @@ PlasmoidItem {
 
     function kbToGib(kb) {
         return kb / 1048576
+    }
+
+    function formatKb(kb) {
+        if (kb >= 1048576) {
+            return (kb / 1048576).toFixed(1) + " GiB"
+        } else if (kb >= 1024) {
+            return (kb / 1024).toFixed(1) + " MiB"
+        } else {
+            return kb.toFixed(0) + " KiB"
+        }
     }
 
     function parseMemInfo(text) {
@@ -50,7 +63,31 @@ PlasmoidItem {
 
         if (map["SwapTotal"] !== undefined) swapTotalKb = map["SwapTotal"]
         if (map["SwapFree"] !== undefined) swapFreeKb = map["SwapFree"]
-        swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
+        if (zramUsedKb > 0) {
+            swapUsedKb = zramUsedKb
+        } else {
+            swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
+        }
+    }
+
+    function parseZramInfo(text) {
+        var lines = text.trim().split("\n")
+        var totalBytes = 0
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (!line) continue
+            var tokens = line.split(/\s+/)
+            if (tokens.length >= 3) {
+                var memUsedBytes = parseFloat(tokens[2])
+                if (!isNaN(memUsedBytes)) {
+                    totalBytes += memUsedBytes
+                }
+            }
+        }
+        if (totalBytes > 0) {
+            zramUsedKb = totalBytes / 1024
+            swapUsedKb = zramUsedKb
+        }
     }
 
     function parseGpuInfo(text) {
@@ -71,6 +108,8 @@ PlasmoidItem {
             if (stdout) {
                 if (sourceName.indexOf("meminfo") >= 0) {
                     parseMemInfo(stdout)
+                } else if (sourceName.indexOf("zram") >= 0) {
+                    parseZramInfo(stdout)
                 } else if (sourceName.indexOf("vram_total") >= 0) {
                     gpuTotalKb = parseGpuInfo(stdout)
                 } else if (sourceName.indexOf("vram_used") >= 0) {
@@ -92,8 +131,9 @@ PlasmoidItem {
         triggeredOnStart: true
         onTriggered: {
             executable.exec("cat /proc/meminfo")
-            executable.exec("cat /sys/class/drm/card1/device/mem_info_vram_total")
-            executable.exec("cat /sys/class/drm/card1/device/mem_info_vram_used")
+            executable.exec("cat /sys/block/zram*/mm_stat 2>/dev/null")
+            executable.exec("cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null")
+            executable.exec("cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
         }
     }
 
@@ -117,7 +157,7 @@ PlasmoidItem {
                 elide: Text.ElideRight
             }
             PlasmaComponents3.Label {
-                text: root.kbToGib(barRoot.usedKb).toFixed(1) + " GiB"
+                text: root.formatKb(barRoot.usedKb)
                 font.bold: true
             }
         }
@@ -317,13 +357,11 @@ PlasmoidItem {
 
     fullRepresentation: ColumnLayout {
         id: fullRepItem
-        readonly property var appletInterface: Plasmoid.self
 
         Layout.minimumWidth: Kirigami.Units.gridUnit * 12
         Layout.minimumHeight: Kirigami.Units.gridUnit * 6
         Layout.preferredWidth: plasmoid.configuration.popupWidth
         Layout.preferredHeight: plasmoid.configuration.popupHeight
-        Layout.margins: Kirigami.Units.smallSpacing
         spacing: Kirigami.Units.smallSpacing * 2
 
         onWidthChanged: {
