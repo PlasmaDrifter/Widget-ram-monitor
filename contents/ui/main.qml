@@ -46,17 +46,37 @@ PlasmoidItem {
         }
     }
 
-    function parseMemInfo(text) {
-        var lines = text.split("\n")
+    function parseSystemStats(text) {
+        var lines = text.trim().split("\n")
         var map = {}
+        var sysfsNumbers = []
+
         for (var i = 0; i < lines.length; i++) {
-            var idx = lines[i].indexOf(":")
-            if (idx < 0) continue
-            var key = lines[i].substring(0, idx).trim()
-            var rest = lines[i].substring(idx + 1).trim()
-            var num = parseFloat(rest.replace(" kB", "").replace(" KB", ""))
-            if (!isNaN(num)) map[key] = num
+            var line = lines[i].trim()
+            if (!line) continue
+
+            var idx = line.indexOf(":")
+            if (idx > 0) {
+                var key = line.substring(0, idx).trim()
+                var rest = line.substring(idx + 1).trim()
+                var num = parseFloat(rest.replace(" kB", "").replace(" KB", ""))
+                if (!isNaN(num)) map[key] = num
+            } else {
+                var tokens = line.split(/\s+/)
+                if (tokens.length >= 3) {
+                    var memUsedBytes = parseFloat(tokens[2])
+                    if (!isNaN(memUsedBytes)) {
+                        zramUsedKb = memUsedBytes / 1024
+                    }
+                } else if (tokens.length === 1) {
+                    var bytes = parseFloat(tokens[0])
+                    if (!isNaN(bytes)) {
+                        sysfsNumbers.push(bytes / 1024)
+                    }
+                }
+            }
         }
+
         if (map["MemTotal"] !== undefined) memTotalKb = map["MemTotal"]
         if (map["MemAvailable"] !== undefined) memAvailableKb = map["MemAvailable"]
         memUsedKb = Math.max(0, memTotalKb - memAvailableKb)
@@ -68,35 +88,13 @@ PlasmoidItem {
         } else {
             swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
         }
-    }
 
-    function parseZramInfo(text) {
-        var lines = text.trim().split("\n")
-        var totalBytes = 0
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim()
-            if (!line) continue
-            var tokens = line.split(/\s+/)
-            if (tokens.length >= 3) {
-                var memUsedBytes = parseFloat(tokens[2])
-                if (!isNaN(memUsedBytes)) {
-                    totalBytes += memUsedBytes
-                }
-            }
+        if (sysfsNumbers.length >= 2) {
+            gpuTotalKb = sysfsNumbers[0]
+            gpuUsedKb = sysfsNumbers[1]
+        } else if (sysfsNumbers.length === 1) {
+            gpuUsedKb = sysfsNumbers[0]
         }
-        if (totalBytes > 0) {
-            zramUsedKb = totalBytes / 1024
-            swapUsedKb = zramUsedKb
-        }
-    }
-
-    function parseGpuInfo(text) {
-        // Parse sysfs VRAM info (single number in bytes)
-        var bytes = parseInt(text.trim())
-        if (!isNaN(bytes)) {
-            return bytes / 1024  // Convert bytes to KB
-        }
-        return 0
     }
 
     Plasma5Support.DataSource {
@@ -106,20 +104,20 @@ PlasmoidItem {
         onNewData: (sourceName, data) => {
             var stdout = data["stdout"]
             if (stdout) {
-                if (sourceName.indexOf("meminfo") >= 0) {
-                    parseMemInfo(stdout)
-                } else if (sourceName.indexOf("zram") >= 0) {
-                    parseZramInfo(stdout)
-                } else if (sourceName.indexOf("vram_total") >= 0) {
-                    gpuTotalKb = parseGpuInfo(stdout)
-                } else if (sourceName.indexOf("vram_used") >= 0) {
-                    gpuUsedKb = parseGpuInfo(stdout)
-                }
+                parseSystemStats(stdout)
             }
             disconnectSource(sourceName)
         }
         function exec(cmd) {
             connectSource(cmd)
+        }
+    }
+
+    function pollStats() {
+        if (gpuTotalKb === 0) {
+            executable.exec("cat /proc/meminfo /sys/block/zram*/mm_stat /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
+        } else {
+            executable.exec("cat /proc/meminfo /sys/block/zram*/mm_stat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
         }
     }
 
@@ -129,12 +127,7 @@ PlasmoidItem {
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: {
-            executable.exec("cat /proc/meminfo")
-            executable.exec("cat /sys/block/zram*/mm_stat 2>/dev/null")
-            executable.exec("cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null")
-            executable.exec("cat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
-        }
+        onTriggered: pollStats()
     }
 
     component UsageBar: ColumnLayout {
