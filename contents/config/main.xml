@@ -18,7 +18,7 @@
       <default>#504646</default>
     </entry>
     <entry name="updateInterval" type="Int">
-      <default>2</default>
+      <default>5</default>
     </entry>
     <entry name="barLength" type="Int">
       <default>50</default>
