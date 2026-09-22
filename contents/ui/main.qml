@@ -20,7 +20,6 @@ PlasmoidItem {
     property real swapTotalKb: 0
     property real swapFreeKb: 0
     property real swapUsedKb: 0
-    property real zramUsedKb: 0
     property real gpuTotalKb: 0
     property real gpuUsedKb: 0
 
@@ -62,17 +61,9 @@ PlasmoidItem {
                 var num = parseFloat(rest.replace(" kB", "").replace(" KB", ""))
                 if (!isNaN(num)) map[key] = num
             } else {
-                var tokens = line.split(/\s+/)
-                if (tokens.length >= 3) {
-                    var memUsedBytes = parseFloat(tokens[2])
-                    if (!isNaN(memUsedBytes)) {
-                        zramUsedKb = memUsedBytes / 1024
-                    }
-                } else if (tokens.length === 1) {
-                    var bytes = parseFloat(tokens[0])
-                    if (!isNaN(bytes)) {
-                        sysfsNumbers.push(bytes / 1024)
-                    }
+                var bytes = parseFloat(line)
+                if (!isNaN(bytes)) {
+                    sysfsNumbers.push(bytes / 1024)
                 }
             }
         }
@@ -83,11 +74,7 @@ PlasmoidItem {
 
         if (map["SwapTotal"] !== undefined) swapTotalKb = map["SwapTotal"]
         if (map["SwapFree"] !== undefined) swapFreeKb = map["SwapFree"]
-        if (zramUsedKb > 0) {
-            swapUsedKb = zramUsedKb
-        } else {
-            swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
-        }
+        swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
 
         if (sysfsNumbers.length >= 2) {
             gpuTotalKb = sysfsNumbers[0]
@@ -115,9 +102,9 @@ PlasmoidItem {
 
     function pollStats() {
         if (gpuTotalKb === 0) {
-            executable.exec("cat /proc/meminfo /sys/block/zram*/mm_stat /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
+            executable.exec("cat /proc/meminfo /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
         } else {
-            executable.exec("cat /proc/meminfo /sys/block/zram*/mm_stat /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
+            executable.exec("cat /proc/meminfo /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
         }
     }
 
