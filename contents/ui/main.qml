@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.components as PlasmaComponents3
-import org.kde.plasma.plasma5support as Plasma5Support
+import org.kde.ksysguard.sensors as Sensors
 import org.kde.kirigami as Kirigami
 
 PlasmoidItem {
@@ -11,14 +12,9 @@ PlasmoidItem {
 
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
-    // Let Plasma pick: full bars directly on the desktop, small compact
-    // icon-style bars when placed in a panel (click to pop up full detail).
-
     property real memTotalKb: 0
-    property real memAvailableKb: 0
     property real memUsedKb: 0
     property real swapTotalKb: 0
-    property real swapFreeKb: 0
     property real swapUsedKb: 0
     property real gpuTotalKb: 0
     property real gpuUsedKb: 0
@@ -27,13 +23,10 @@ PlasmoidItem {
     readonly property color swapColor: plasmoid.configuration.swapColor
     readonly property color gpuColor: plasmoid.configuration.gpuColor
     readonly property color trackColor: plasmoid.configuration.trackColor
+    readonly property int updateMs: Math.max(500, (plasmoid.configuration.updateInterval || 5) * 1000)
 
     toolTipMainText: ""
     toolTipSubText: ""
-
-    function kbToGib(kb) {
-        return kb / 1048576
-    }
 
     function formatKb(kb) {
         if (kb >= 1048576) {
@@ -45,76 +38,53 @@ PlasmoidItem {
         }
     }
 
-    function parseSystemStats(text) {
-        var lines = text.trim().split("\n")
-        var map = {}
-        var sysfsNumbers = []
-
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim()
-            if (!line) continue
-
-            var idx = line.indexOf(":")
-            if (idx > 0) {
-                var key = line.substring(0, idx).trim()
-                var rest = line.substring(idx + 1).trim()
-                var num = parseFloat(rest.replace(" kB", "").replace(" KB", ""))
-                if (!isNaN(num)) map[key] = num
-            } else {
-                var bytes = parseFloat(line)
-                if (!isNaN(bytes)) {
-                    sysfsNumbers.push(bytes / 1024)
-                }
-            }
-        }
-
-        if (map["MemTotal"] !== undefined) memTotalKb = map["MemTotal"]
-        if (map["MemAvailable"] !== undefined) memAvailableKb = map["MemAvailable"]
-        memUsedKb = Math.max(0, memTotalKb - memAvailableKb)
-
-        if (map["SwapTotal"] !== undefined) swapTotalKb = map["SwapTotal"]
-        if (map["SwapFree"] !== undefined) swapFreeKb = map["SwapFree"]
-        swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb)
-
-        if (sysfsNumbers.length >= 2) {
-            gpuTotalKb = sysfsNumbers[0]
-            gpuUsedKb = sysfsNumbers[1]
-        } else if (sysfsNumbers.length === 1) {
-            gpuUsedKb = sysfsNumbers[0]
+    Sensors.Sensor {
+        sensorId: "memory/physical/total"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.memTotalKb = Math.max(0, Number(value) / 1024)
         }
     }
-
-    Plasma5Support.DataSource {
-        id: executable
-        engine: "executable"
-        connectedSources: []
-        onNewData: (sourceName, data) => {
-            var stdout = data["stdout"]
-            if (stdout) {
-                parseSystemStats(stdout)
-            }
-            disconnectSource(sourceName)
-        }
-        function exec(cmd) {
-            connectSource(cmd)
+    Sensors.Sensor {
+        sensorId: "memory/physical/used"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.memUsedKb = Math.max(0, Number(value) / 1024)
         }
     }
-
-    function pollStats() {
-        if (gpuTotalKb === 0) {
-            executable.exec("cat /proc/meminfo /sys/class/drm/card*/device/mem_info_vram_total /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
-        } else {
-            executable.exec("cat /proc/meminfo /sys/class/drm/card*/device/mem_info_vram_used 2>/dev/null")
+    Sensors.Sensor {
+        sensorId: "memory/swap/total"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.swapTotalKb = Math.max(0, Number(value) / 1024)
         }
     }
-
-    Timer {
-        id: pollTimer
-        interval: (plasmoid.configuration.updateInterval || 5) * 1000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: pollStats()
+    Sensors.Sensor {
+        sensorId: "memory/swap/used"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.swapUsedKb = Math.max(0, Number(value) / 1024)
+        }
+    }
+    Sensors.Sensor {
+        sensorId: "gpu/all/totalVram"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.gpuTotalKb = Math.max(0, Number(value) / 1024)
+        }
+    }
+    Sensors.Sensor {
+        sensorId: "gpu/all/usedVram"
+        updateRateLimit: root.updateMs
+        enabled: true
+        onValueChanged: {
+            if (value !== undefined && !isNaN(value)) root.gpuUsedKb = Math.max(0, Number(value) / 1024)
+        }
     }
 
     component UsageBar: ColumnLayout {
@@ -147,6 +117,7 @@ PlasmoidItem {
             Layout.preferredHeight: Kirigami.Units.gridUnit * 0.55
             radius: height / 2
             color: root.trackColor
+            clip: true
 
             Rectangle {
                 anchors.left: parent.left
@@ -155,7 +126,7 @@ PlasmoidItem {
                 radius: parent.radius
                 color: barRoot.barColor
                 width: barRoot.totalKb > 0
-                    ? Math.min(parent.width, parent.width * (barRoot.usedKb / barRoot.totalKb))
+                    ? parent.width * Math.max(0, Math.min(1, barRoot.usedKb / barRoot.totalKb))
                     : 0
 
                 Behavior on width {
@@ -218,6 +189,39 @@ PlasmoidItem {
             onClicked: root.expanded = !root.expanded
         }
 
+        component CompactBar: Rectangle {
+            id: barItem
+            property real usedKb: 0
+            property real totalKb: 0
+            property color barColor: "#ffffff"
+            property bool verticalFill: false
+            property bool showBar: true
+
+            visible: showBar
+            Layout.fillWidth: !verticalFill
+            Layout.fillHeight: verticalFill
+            Layout.preferredWidth: verticalFill ? compact.barThickness : -1
+            Layout.preferredHeight: verticalFill ? -1 : compact.barThickness
+            radius: (verticalFill ? width : height) / 2
+            color: root.trackColor
+            clip: true
+
+            readonly property real ratio: barItem.totalKb > 0 ? Math.max(0, Math.min(1, barItem.usedKb / barItem.totalKb)) : 0
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.top: barItem.verticalFill ? undefined : parent.top
+                anchors.right: barItem.verticalFill ? parent.right : undefined
+                radius: parent.radius
+                color: barItem.barColor
+                width: barItem.verticalFill ? parent.width : barItem.ratio * parent.width
+                height: barItem.verticalFill ? barItem.ratio * parent.height : parent.height
+                Behavior on width { enabled: !barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                Behavior on height { enabled: barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+            }
+        }
+
         // Horizontal layout (horizontal bars, stacked):
         ColumnLayout {
             anchors.centerIn: parent
@@ -225,55 +229,9 @@ PlasmoidItem {
             spacing: compact.barGap
             visible: !compact.isVerticalLayout
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: compact.barThickness
-                radius: height / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.usedColor
-                    width: root.memTotalKb > 0 ? parent.width * (root.memUsedKb / root.memTotalKb) : 0
-                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            Rectangle {
-                visible: root.swapTotalKb > 0
-                Layout.fillWidth: true
-                Layout.preferredHeight: compact.barThickness
-                radius: height / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.swapColor
-                    width: root.swapTotalKb > 0 ? parent.width * (root.swapUsedKb / root.swapTotalKb) : 0
-                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            Rectangle {
-                visible: root.gpuTotalKb > 0
-                Layout.fillWidth: true
-                Layout.preferredHeight: compact.barThickness
-                radius: height / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.gpuColor
-                    width: root.gpuTotalKb > 0 ? parent.width * (root.gpuUsedKb / root.gpuTotalKb) : 0
-                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
+            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: false }
+            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: false; showBar: root.swapTotalKb > 0 }
+            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: false; showBar: root.gpuTotalKb > 0 }
         }
 
         // Vertical layout (vertical bars, side-by-side):
@@ -283,55 +241,9 @@ PlasmoidItem {
             spacing: compact.barGap
             visible: compact.isVerticalLayout
 
-            Rectangle {
-                Layout.fillHeight: true
-                Layout.preferredWidth: compact.barThickness
-                radius: width / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.usedColor
-                    height: root.memTotalKb > 0 ? parent.height * (root.memUsedKb / root.memTotalKb) : 0
-                    Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            Rectangle {
-                visible: root.swapTotalKb > 0
-                Layout.fillHeight: true
-                Layout.preferredWidth: compact.barThickness
-                radius: width / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.swapColor
-                    height: root.swapTotalKb > 0 ? parent.height * (root.swapUsedKb / root.swapTotalKb) : 0
-                    Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            Rectangle {
-                visible: root.gpuTotalKb > 0
-                Layout.fillHeight: true
-                Layout.preferredWidth: compact.barThickness
-                radius: width / 2
-                color: root.trackColor
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    radius: parent.radius
-                    color: root.gpuColor
-                    height: root.gpuTotalKb > 0 ? parent.height * (root.gpuUsedKb / root.gpuTotalKb) : 0
-                    Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                }
-            }
+            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: true }
+            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: true; showBar: root.swapTotalKb > 0 }
+            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: true; showBar: root.gpuTotalKb > 0 }
         }
     }
 
@@ -344,14 +256,22 @@ PlasmoidItem {
         Layout.preferredHeight: plasmoid.configuration.popupHeight
         spacing: Kirigami.Units.smallSpacing * 2
 
-        onWidthChanged: {
-            if (plasmoid.expanded && width >= Layout.minimumWidth && width !== plasmoid.configuration.popupWidth) {
-                plasmoid.configuration.popupWidth = width;
-            }
-        }
-        onHeightChanged: {
-            if (plasmoid.expanded && height >= Layout.minimumHeight && height !== plasmoid.configuration.popupHeight) {
-                plasmoid.configuration.popupHeight = height;
+        onWidthChanged: resizeSaveTimer.restart()
+        onHeightChanged: resizeSaveTimer.restart()
+
+        Timer {
+            id: resizeSaveTimer
+            interval: 250
+            repeat: false
+            onTriggered: {
+                if (plasmoid.expanded && fullRepItem.Window.window && fullRepItem.Window.window.visible) {
+                    if (fullRepItem.width >= fullRepItem.Layout.minimumWidth && fullRepItem.width !== plasmoid.configuration.popupWidth) {
+                        plasmoid.configuration.popupWidth = fullRepItem.width;
+                    }
+                    if (fullRepItem.height >= fullRepItem.Layout.minimumHeight && fullRepItem.height !== plasmoid.configuration.popupHeight) {
+                        plasmoid.configuration.popupHeight = fullRepItem.height;
+                    }
+                }
             }
         }
 
