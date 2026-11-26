@@ -18,9 +18,6 @@ PlasmoidItem {
     property real swapUsedKb: 0
     property real gpuTotalKb: 0
     property real gpuUsedKb: 0
-    property bool memTotalLoaded: false
-    property bool swapTotalLoaded: false
-    property bool gpuTotalLoaded: false
 
     readonly property color usedColor: plasmoid.configuration.ramColor
     readonly property color swapColor: plasmoid.configuration.swapColor
@@ -41,61 +38,69 @@ PlasmoidItem {
         }
     }
 
-    Sensors.Sensor {
-        sensorId: "memory/physical/total"
-        updateRateLimit: root.updateMs
-        enabled: !root.memTotalLoaded
-        onValueChanged: {
-            if (value !== undefined && !isNaN(value)) {
-                root.memTotalKb = Math.max(0, Number(value) / 1024)
-                root.memTotalLoaded = true
+    component StaticTotalSensor: Sensors.Sensor {
+        property bool keepPollingWhenExpanded: false
+        property int readySamples: 0
+        property bool loaded: false
+        signal totalLoaded(real kb)
+
+        function tryCommit() {
+            if (status === Sensors.Sensor.Ready && value !== null && value !== undefined && !isNaN(value)) {
+                var v = Number(value)
+                if (v > 0) {
+                    loaded = true
+                    totalLoaded(v / 1024)
+                } else {
+                    readySamples += 1
+                    if (readySamples >= 3) {
+                        loaded = true
+                        totalLoaded(0)
+                    }
+                }
             }
         }
+
+        updateRateLimit: root.updateMs
+        enabled: !loaded || (keepPollingWhenExpanded && root.expanded)
+        onStatusChanged: tryCommit()
+        onValueChanged: tryCommit()
+    }
+
+    StaticTotalSensor {
+        sensorId: "memory/physical/total"
+        onTotalLoaded: function(kb) { root.memTotalKb = kb }
     }
     Sensors.Sensor {
         sensorId: "memory/physical/used"
         updateRateLimit: root.updateMs
         enabled: true
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.memUsedKb = Math.max(0, Number(value) / 1024)
+            if (value !== null && value !== undefined && !isNaN(value)) root.memUsedKb = Math.max(0, Number(value) / 1024)
         }
     }
-    Sensors.Sensor {
+    StaticTotalSensor {
         sensorId: "memory/swap/total"
-        updateRateLimit: root.updateMs
-        enabled: !root.swapTotalLoaded || root.expanded
-        onValueChanged: {
-            if (value !== undefined && !isNaN(value)) {
-                root.swapTotalKb = Math.max(0, Number(value) / 1024)
-                root.swapTotalLoaded = true
-            }
-        }
+        keepPollingWhenExpanded: true
+        onTotalLoaded: function(kb) { root.swapTotalKb = kb }
     }
     Sensors.Sensor {
         sensorId: "memory/swap/used"
         updateRateLimit: root.updateMs
         enabled: true
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.swapUsedKb = Math.max(0, Number(value) / 1024)
+            if (value !== null && value !== undefined && !isNaN(value)) root.swapUsedKb = Math.max(0, Number(value) / 1024)
         }
     }
-    Sensors.Sensor {
+    StaticTotalSensor {
         sensorId: "gpu/all/totalVram"
-        updateRateLimit: root.updateMs
-        enabled: !root.gpuTotalLoaded
-        onValueChanged: {
-            if (value !== undefined && !isNaN(value)) {
-                root.gpuTotalKb = Math.max(0, Number(value) / 1024)
-                root.gpuTotalLoaded = true
-            }
-        }
+        onTotalLoaded: function(kb) { root.gpuTotalKb = kb }
     }
     Sensors.Sensor {
         sensorId: "gpu/all/usedVram"
         updateRateLimit: root.updateMs
         enabled: true
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.gpuUsedKb = Math.max(0, Number(value) / 1024)
+            if (value !== null && value !== undefined && !isNaN(value)) root.gpuUsedKb = Math.max(0, Number(value) / 1024)
         }
     }
 
