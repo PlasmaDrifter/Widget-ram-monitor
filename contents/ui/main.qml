@@ -18,6 +18,9 @@ PlasmoidItem {
     property real swapUsedKb: 0
     property real gpuTotalKb: 0
     property real gpuUsedKb: 0
+    property bool memTotalLoaded: false
+    property bool swapTotalLoaded: false
+    property bool gpuTotalLoaded: false
 
     readonly property color usedColor: plasmoid.configuration.ramColor
     readonly property color swapColor: plasmoid.configuration.swapColor
@@ -41,9 +44,12 @@ PlasmoidItem {
     Sensors.Sensor {
         sensorId: "memory/physical/total"
         updateRateLimit: root.updateMs
-        enabled: true
+        enabled: !root.memTotalLoaded
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.memTotalKb = Math.max(0, Number(value) / 1024)
+            if (value !== undefined && !isNaN(value)) {
+                root.memTotalKb = Math.max(0, Number(value) / 1024)
+                root.memTotalLoaded = true
+            }
         }
     }
     Sensors.Sensor {
@@ -57,9 +63,12 @@ PlasmoidItem {
     Sensors.Sensor {
         sensorId: "memory/swap/total"
         updateRateLimit: root.updateMs
-        enabled: true
+        enabled: !root.swapTotalLoaded || root.expanded
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.swapTotalKb = Math.max(0, Number(value) / 1024)
+            if (value !== undefined && !isNaN(value)) {
+                root.swapTotalKb = Math.max(0, Number(value) / 1024)
+                root.swapTotalLoaded = true
+            }
         }
     }
     Sensors.Sensor {
@@ -73,9 +82,12 @@ PlasmoidItem {
     Sensors.Sensor {
         sensorId: "gpu/all/totalVram"
         updateRateLimit: root.updateMs
-        enabled: true
+        enabled: !root.gpuTotalLoaded
         onValueChanged: {
-            if (value !== undefined && !isNaN(value)) root.gpuTotalKb = Math.max(0, Number(value) / 1024)
+            if (value !== undefined && !isNaN(value)) {
+                root.gpuTotalKb = Math.max(0, Number(value) / 1024)
+                root.gpuTotalLoaded = true
+            }
         }
     }
     Sensors.Sensor {
@@ -94,6 +106,7 @@ PlasmoidItem {
         property real totalKb: 0
         property color barColor: "#ff2fc0"
         property bool showRow: true
+        property bool animEnabled: true
 
         Layout.fillWidth: true
         spacing: Kirigami.Units.smallSpacing / 2
@@ -130,6 +143,7 @@ PlasmoidItem {
                     : 0
 
                 Behavior on width {
+                    enabled: barRoot.animEnabled
                     NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
                 }
             }
@@ -196,6 +210,7 @@ PlasmoidItem {
             property color barColor: "#ffffff"
             property bool verticalFill: false
             property bool showBar: true
+            property bool animEnabled: true
 
             visible: showBar
             Layout.fillWidth: !verticalFill
@@ -215,10 +230,10 @@ PlasmoidItem {
                 anchors.right: barItem.verticalFill ? parent.right : undefined
                 radius: parent.radius
                 color: barItem.barColor
-                width: barItem.verticalFill ? parent.width : barItem.ratio * parent.width
-                height: barItem.verticalFill ? barItem.ratio * parent.height : parent.height
-                Behavior on width { enabled: !barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                Behavior on height { enabled: barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                width: barItem.verticalFill ? parent.width : Math.round(barItem.ratio * parent.width * 2) / 2
+                height: barItem.verticalFill ? Math.round(barItem.ratio * parent.height * 2) / 2 : parent.height
+                Behavior on width { enabled: barItem.animEnabled && !barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                Behavior on height { enabled: barItem.animEnabled && barItem.verticalFill; NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -229,9 +244,9 @@ PlasmoidItem {
             spacing: compact.barGap
             visible: !compact.isVerticalLayout
 
-            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: false }
-            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: false; showBar: root.swapTotalKb > 0 }
-            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: false; showBar: root.gpuTotalKb > 0 }
+            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: false; animEnabled: !compact.isVerticalLayout }
+            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: false; showBar: root.swapTotalKb > 0; animEnabled: !compact.isVerticalLayout }
+            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: false; showBar: root.gpuTotalKb > 0; animEnabled: !compact.isVerticalLayout }
         }
 
         // Vertical layout (vertical bars, side-by-side):
@@ -241,9 +256,9 @@ PlasmoidItem {
             spacing: compact.barGap
             visible: compact.isVerticalLayout
 
-            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: true }
-            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: true; showBar: root.swapTotalKb > 0 }
-            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: true; showBar: root.gpuTotalKb > 0 }
+            CompactBar { usedKb: root.memUsedKb; totalKb: root.memTotalKb; barColor: root.usedColor; verticalFill: true; animEnabled: compact.isVerticalLayout }
+            CompactBar { usedKb: root.swapUsedKb; totalKb: root.swapTotalKb; barColor: root.swapColor; verticalFill: true; showBar: root.swapTotalKb > 0; animEnabled: compact.isVerticalLayout }
+            CompactBar { usedKb: root.gpuUsedKb; totalKb: root.gpuTotalKb; barColor: root.gpuColor; verticalFill: true; showBar: root.gpuTotalKb > 0; animEnabled: compact.isVerticalLayout }
         }
     }
 
@@ -280,6 +295,7 @@ PlasmoidItem {
             usedKb: root.memUsedKb
             totalKb: root.memTotalKb
             barColor: root.usedColor
+            animEnabled: fullRepItem.visible
         }
 
         UsageBar {
@@ -288,6 +304,7 @@ PlasmoidItem {
             totalKb: root.swapTotalKb
             barColor: root.swapColor
             showRow: root.swapTotalKb > 0
+            animEnabled: fullRepItem.visible
         }
 
         UsageBar {
@@ -296,6 +313,7 @@ PlasmoidItem {
             totalKb: root.gpuTotalKb
             barColor: root.gpuColor
             showRow: root.gpuTotalKb > 0
+            animEnabled: fullRepItem.visible
         }
     }
 }
